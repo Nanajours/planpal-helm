@@ -5,13 +5,12 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  # ECR registry that holds all three application images.
+  # ECR registry that holds all three application images. A workload can set
+  # its own `registry: ""` to pull from Docker Hub instead.
   registry: 134604498185.dkr.ecr.ap-southeast-3.amazonaws.com
   pullPolicy: IfNotPresent
-  # Repositories inside that registry. Tags default to .Chart.AppVersion.
-  server: ch4-g3-nar/server
-  worker: ch4-g3-nar/worker
-  frontend: ch4-g3-nar/frontend
+  # Tag applied to every workload that does not pin its own. Empty means
+  # .Chart.AppVersion.
   tag: ""
 
 # ServiceAccounts. On EKS these are bound to IAM roles by Pod Identity
@@ -21,8 +20,9 @@ serviceAccount:
   backend: planpal
   frontend: planpal-fe
 
-# Non-secret application configuration. Rendered into a ConfigMap and
-# consumed by every backend workload through envFrom.
+# Non-secret application configuration. Rendered into a ConfigMap and consumed
+# by every backend workload through envFrom. Changing anything here changes the
+# checksum/config annotation, which rolls the workloads that read it.
 config:
   POSTGRES_DB: planpal
   POSTGRES_USER: planpal
@@ -41,89 +41,196 @@ config:
 externalSecrets:
   enabled: true
   region: ap-southeast-3
-  # One Secrets Manager entry holds every key listed below.
+  # One Secrets Manager entry holds every key listed in external-secrets.yaml.
   awsSecretName: ch4-g3-secret-nar
   refreshInterval: 1h
   storeName: aws-secretsmanager
 
-server:
-  replicaCount: 2
-  port: 8088
-  resources:
-    requests: { cpu: 100m, memory: 150Mi }
-    limits: { cpu: 500m, memory: 384Mi }
-  # Delays SIGTERM so kube-proxy on every node has time to drop this Pod
-  # from the Service before it stops accepting connections.
-  preStopSleep: 5
-  hpa:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 5
-    targetCPUUtilizationPercentage: 70
-  pdb:
-    enabled: true
-    minAvailable: 1
+# ---------------------------------------------------------------------------
+# Workloads
+#
+# One entry per long-running component. templates/_workload.tpl turns each into
+# a Deployment or StatefulSet, plus a Service, HPA and PDB when those blocks are
+# present. Only the differences between components appear here; the shared shape
+# lives in the template.
+#
+# Recognised keys:
+#   enabled, kind (Deployment|StatefulSet), image, registry, tag, replicas,
+#   strategy (RollingUpdate|Recreate), serviceAccount, command, args, ports,
+#   configMaps, secrets, preStopSleep, resources, probe, service, hpa, pdb,
+#   persistence
+#
+# probe defaults to readiness 5s/10s and liveness 15s/20s; override with
+#   probe: { path: /x, port: 1, liveness: { periodSeconds: 30 } }
+# ---------------------------------------------------------------------------
+workloads:
 
-frontend:
-  replicaCount: 2
-  port: 3000
-  resources:
-    requests: { cpu: 100m, memory: 128Mi }
-    limits: { cpu: 300m, memory: 256Mi }
-  hpa:
+  server:
     enabled: true
-    minReplicas: 2
-    maxReplicas: 5
-    targetCPUUtilizationPercentage: 70
-  pdb:
-    enabled: true
-    minAvailable: 1
+    image: ch4-g3-nar/server
+    replicas: 2
+    strategy: RollingUpdate
+    serviceAccount: planpal
+    configMaps: [planpal-config]
+    secrets: [planpal-secret]
+    ports: [8088]
+    preStopSleep: 5
+    probe: { path: /api/v1/health, port: 8088 }
+    service:
+      ports: [{ port: 8088 }]
+    resources:
+      requests: { cpu: 100m, memory: 150Mi }
+      # Memory needs more headroom than CPU: an overrun is an OOM kill, not a
+      # throttle.
+      limits: { cpu: 500m, memory: 384Mi }
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 70
+    pdb:
+      enabled: true
+      minAvailable: 1
 
-# The three workers share one image and differ only by entrypoint and
-# metrics port. Each exposes /metrics, which doubles as its health check.
-workers:
-  resources:
-    requests: { cpu: 100m, memory: 128Mi }
-    limits: { cpu: 500m, memory: 256Mi }
-  schedule:
+  frontend:
     enabled: true
-    metricsPort: 9091
-    command: []
-  notification:
-    enabled: true
-    metricsPort: 9092
-    command: ["planpal-notification-worker"]
-  ai:
-    enabled: true
-    metricsPort: 9093
-    command: ["planpal-ai-worker"]
+    image: ch4-g3-nar/frontend
+    replicas: 2
+    strategy: RollingUpdate
+    serviceAccount: planpal-fe
+    # No ConfigMap: the frontend reads only its Firebase secret.
+    secrets: [planpal-frontend-secret]
+    ports: [3000]
+    probe: { path: /, port: 3000, readiness: { periodSeconds: 15 } }
+    service:
+      # The Ingress already points at this name.
+      name: frontend-service
+      ports: [{ port: 3000 }]
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 300m, memory: 256Mi }
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 70
+    pdb:
+      enabled: true
+      minAvailable: 1
 
-# Creates the first admin account. Runs once per release.
+  # The three workers share one image and differ only by entrypoint and metrics
+  # port. They serve no traffic, so they get no Service and /metrics doubles as
+  # the health signal.
+  schedule-worker:
+    enabled: true
+    image: ch4-g3-nar/worker
+    serviceAccount: planpal
+    configMaps: [planpal-config]
+    secrets: [planpal-secret]
+    # No command: the image's default entrypoint is the schedule worker.
+    probe: { path: /metrics, port: 9091 }
+    resources: &workerResources
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 256Mi }
+
+  notification-worker:
+    enabled: true
+    image: ch4-g3-nar/worker
+    serviceAccount: planpal
+    configMaps: [planpal-config]
+    secrets: [planpal-secret]
+    command: [planpal-notification-worker]
+    probe: { path: /metrics, port: 9092 }
+    resources: *workerResources
+
+  ai-worker:
+    enabled: true
+    image: ch4-g3-nar/worker
+    serviceAccount: planpal
+    configMaps: [planpal-config]
+    secrets: [planpal-secret]
+    command: [planpal-ai-worker]
+    probe: { path: /metrics, port: 9093 }
+    resources: *workerResources
+
+  # In-cluster datastores. Disable postgres when the database is on RDS.
+  postgres:
+    enabled: true
+    # StatefulSet, not Deployment: the volume and the identity must stay paired
+    # across restarts.
+    kind: StatefulSet
+    registry: ""
+    image: postgres
+    tag: 16-alpine
+    configMaps: [planpal-config]
+    secrets: [planpal-secret]
+    ports: [5432]
+    probe:
+      exec: [pg_isready, -U, planpal, -d, planpal]
+      liveness: { periodSeconds: 15 }
+    service:
+      headless: true
+      ports: [{ port: 5432 }]
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+    persistence:
+      name: pgdata
+      mountPath: /var/lib/postgresql/data
+      storageClass: gp3
+      size: 1Gi
+
+  redis:
+    enabled: true
+    registry: ""
+    image: redis
+    tag: 7-alpine
+    ports: [6379]
+    probe:
+      exec: [redis-cli, ping]
+      readiness: { periodSeconds: 5 }
+      liveness: { periodSeconds: 10 }
+    service:
+      ports: [{ port: 6379 }]
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 200m, memory: 128Mi }
+
+  nats:
+    enabled: true
+    registry: ""
+    image: nats
+    tag: 2-alpine
+    # -m enables the monitoring endpoint the monitor port exposes.
+    args: ["-m", "8222"]
+    ports: [4222, 8222]
+    probe: { path: /healthz, port: 8222 }
+    service:
+      ports:
+        - { name: client, port: 4222 }
+        - { name: monitor, port: 8222 }
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 200m, memory: 128Mi }
+
+# Creates the first admin account. Runs once per release, as a Helm hook.
 seedJob:
   enabled: true
-
-# In-cluster datastores. Disable postgres when using RDS.
-postgres:
-  enabled: true
-  image: postgres:16-alpine
-  storageClass: gp3
-  size: 1Gi
-  resources:
-    requests: { cpu: 100m, memory: 128Mi }
-    limits: { cpu: 500m, memory: 256Mi }
-
-redis:
-  enabled: true
-  image: redis:7-alpine
-
-nats:
-  enabled: true
-  image: nats:2-alpine
+  image: ch4-g3-nar/server
+  command: [seed_admin]
 
 ingress:
-  enabled: true
+  # Off by default: a scratch cluster has no AWS Load Balancer Controller.
+  # values-prod.yaml turns it on and supplies the certificate.
+  enabled: false
   className: alb
   host: ch4-g3-nar.sandbox.devopsinstitute.id
   # ACM certificate ARN. The ALB terminates TLS, so no Kubernetes Secret.
+  # Required whenever ingress is enabled on the alb class.
   certificateArn: ""
   healthcheckPath: /api/v1/health
+
+# `helm test` runs a Pod that curls the server's health endpoint.
+tests:
+  enabled: true
+  image: curlimages/curl:8.11.0

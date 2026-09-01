@@ -21,9 +21,9 @@ spec:
       restartPolicy: Never
       containers:
         - name: seed-admin
-          image: {{ include "planpal.image" (list . .Values.image.server .Values.image.tag) }}
+          image: {{ include "planpal.image" (dict "root" . "w" .Values.seedJob) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["seed_admin"]
+          command: {{ toYaml .Values.seedJob.command | nindent 12 }}
           envFrom:
             - configMapRef: { name: planpal-config }
             - secretRef: { name: planpal-secret }

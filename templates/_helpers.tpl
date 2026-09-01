@@ -31,11 +31,3 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
-
-{{/* The image reference for a given component: registry/repo:tag */}}
-{{- define "planpal.image" -}}
-{{- $root := index . 0 -}}
-{{- $repo := index . 1 -}}
-{{- $tag  := index . 2 -}}
-{{- printf "%s/%s:%s" $root.Values.image.registry $repo (default $root.Chart.AppVersion $tag) -}}
-{{- end -}}

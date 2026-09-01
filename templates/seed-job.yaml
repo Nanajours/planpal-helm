@@ -12,20 +12,27 @@ metadata:
     helm.sh/hook-weight: "5"
     helm.sh/hook-delete-policy: before-hook-creation
 spec:
-  backoffLimit: 4
+  backoffLimit: 2
   template:
     metadata:
       labels: { app: seed-admin }
     spec:
       serviceAccountName: {{ .Values.serviceAccount.backend }}
-      restartPolicy: OnFailure
+      restartPolicy: Never
       containers:
         - name: seed-admin
           image: {{ include "planpal.image" (list . .Values.image.server .Values.image.tag) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["planpal-seed-admin"]
+          command: ["seed_admin"]
           envFrom:
             - configMapRef: { name: planpal-config }
             - secretRef: { name: planpal-secret }
             - secretRef: { name: planpal-seed-admin-secret }
+          {{- /* seed_admin reads DATABASE_URL, but the secret stores the value
+                 under SECRET_DATABASE_URL. envFrom cannot rename a key, so the
+                 single value is mapped explicitly here. */}}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: planpal-secret, key: SECRET_DATABASE_URL }
 {{- end }}

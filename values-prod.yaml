@@ -6,6 +6,8 @@
 # External Secrets Operator and the EBS CSI driver. Each ServiceAccount is
 # bound to an IAM role by a Pod Identity association made outside this chart.
 
+#. this is a value file for reusability, and will be injected to templates
+
 image:
   tag: v1.0.0
 

@@ -1,0 +1,29 @@
+#. Job -> this gets executed once only, to create admin the first time
+#. command -> this is just to override entrypoint default image (CMD["planpal-server"])
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-admin
+  namespace: planpal
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      serviceAccountName: planpal
+      restartPolicy: Never
+      containers:
+        - name: seed-admin
+          image: 134604498185.dkr.ecr.ap-southeast-3.amazonaws.com/ch4-g3-nar/server:v1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["seed_admin"]
+          #. env from -> cuma bisa dump nama key aslinya
+          envFrom:
+            - configMapRef: { name: planpal-config }
+            - secretRef: { name: planpal-secret }
+            - secretRef: { name: planpal-seed-admin-secret }
+          #. env bisa rename, ex : SECRET_DATABASE_URL = DATABASE_URL, biar bisa pilih key specific
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: planpal-secret, key: SECRET_DATABASE_URL }

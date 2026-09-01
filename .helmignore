@@ -1,0 +1,9 @@
+.DS_Store
+.git/
+*.tmp
+*.orig
+*.bak
+
+# Reference copies of the pre-Helm manifests. Not part of the chart.
+raw-manifests/
+aws/

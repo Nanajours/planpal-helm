@@ -1,0 +1,48 @@
+# Production overrides for cluster CH4-G3-NAR (ap-southeast-3).
+#
+#   helm install planpal . -n planpal --create-namespace -f values-prod.yaml
+#
+# The cluster already has the AWS Load Balancer Controller, ExternalDNS,
+# External Secrets Operator and the EBS CSI driver. Each ServiceAccount is
+# bound to an IAM role by a Pod Identity association made outside this chart.
+
+image:
+  tag: v1.0.0
+
+ingress:
+  enabled: true
+  className: alb
+  host: ch4-g3-nar.sandbox.devopsinstitute.id
+  certificateArn: arn:aws:acm:ap-southeast-3:134604498185:certificate/d2af9d54-2b41-4ff0-97c0-a59d8674802e
+  healthcheckPath: /api/v1/health
+
+externalSecrets:
+  enabled: true
+  region: ap-southeast-3
+  awsSecretName: ch4-g3-secret-nar
+  refreshInterval: 1h
+
+# The database is on RDS, reached through SECRET_DATABASE_URL in Secrets Manager.
+# Running a second Postgres in-cluster would be unused and would hold an EBS
+# volume for nothing.
+postgres:
+  enabled: false
+
+redis:
+  enabled: true
+nats:
+  enabled: true
+
+server:
+  replicaCount: 2
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+
+frontend:
+  replicaCount: 2
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5

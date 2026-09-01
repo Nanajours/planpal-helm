@@ -1,0 +1,19 @@
+PlanPal {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+{{ if .Values.ingress.enabled -}}
+URL:  https://{{ .Values.ingress.host }}
+
+The ALB takes 2-4 minutes to provision. Watch for an ADDRESS:
+  kubectl get ingress -n {{ .Release.Namespace }} -w
+{{- end }}
+
+Check everything came up:
+  kubectl get pods -n {{ .Release.Namespace }}
+  kubectl get externalsecret -n {{ .Release.Namespace }}
+
+The ExternalSecrets must reach SecretSynced before the app can start; the
+database URL and every credential arrive that way.
+
+Health, end to end:
+  kubectl run probe --rm -i --restart=Never -n {{ .Release.Namespace }} \
+    --image=curlimages/curl -- curl -s http://server:{{ .Values.server.port }}/api/v1/health

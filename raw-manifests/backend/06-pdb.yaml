@@ -1,0 +1,12 @@
+#. keep at least 1 server pod up during voluntary disruptions (node drain, rollout, etc)
+#. zero downtime
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: server-pdb
+  namespace: planpal
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: server }

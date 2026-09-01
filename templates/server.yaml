@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  labels:
+    {{- include "planpal.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.server.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      {{- /* maxUnavailable 0 keeps every old Pod serving until a new one is
+             Ready, which is what makes the rollout zero-downtime. */}}
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: { app: server }
+  template:
+    metadata:
+      labels: { app: server }
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.backend }}
+      containers:
+        - name: server
+          image: {{ include "planpal.image" (list . .Values.image.server .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{ containerPort: {{ .Values.server.port }} }]
+          envFrom:
+            - configMapRef: { name: planpal-config }
+            - secretRef: { name: planpal-secret }
+          lifecycle:
+            preStop:
+              exec: { command: ["sleep", "{{ .Values.server.preStopSleep }}"] }
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /api/v1/health, port: {{ .Values.server.port }} }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/v1/health, port: {{ .Values.server.port }} }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  labels:
+    {{- include "planpal.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: { app: server }
+  ports:
+    - port: {{ .Values.server.port }}
+      targetPort: {{ .Values.server.port }}

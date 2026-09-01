@@ -1,0 +1,10 @@
+apiVersion: v2
+name: planpal
+description: PlanPal — meeting scheduler with AI assistance, on Amazon EKS
+type: application
+version: 1.0.0
+appVersion: "v1.0.0"
+keywords:
+  - planpal
+  - scheduling
+  - meetings

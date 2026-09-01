@@ -1,0 +1,31 @@
+{{- if .Values.seedJob.enabled }}
+{{- /* Creates the first admin account. The name carries the revision so a
+       helm upgrade produces a new Job rather than failing on an immutable one. */}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-admin-{{ .Release.Revision }}
+  labels:
+    {{- include "planpal.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels: { app: seed-admin }
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.backend }}
+      restartPolicy: OnFailure
+      containers:
+        - name: seed-admin
+          image: {{ include "planpal.image" (list . .Values.image.server .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["planpal-seed-admin"]
+          envFrom:
+            - configMapRef: { name: planpal-config }
+            - secretRef: { name: planpal-secret }
+            - secretRef: { name: planpal-seed-admin-secret }
+{{- end }}

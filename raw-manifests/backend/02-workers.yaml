@@ -1,0 +1,103 @@
+
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schedule-worker
+  namespace: planpal
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: schedule-worker }
+  template:
+    metadata:
+      labels: { app: schedule-worker }
+    spec:
+      serviceAccountName: planpal
+      containers:
+        - name: schedule-worker
+          image: 134604498185.dkr.ecr.ap-southeast-3.amazonaws.com/ch4-g3-nar/worker:v1.0.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: planpal-config }
+            - secretRef: { name: planpal-secret }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /metrics, port: 9091 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /metrics, port: 9091 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-worker
+  namespace: planpal
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: notification-worker }
+  template:
+    metadata:
+      labels: { app: notification-worker }
+    spec:
+      serviceAccountName: planpal
+      containers:
+        - name: notification-worker
+          image: 134604498185.dkr.ecr.ap-southeast-3.amazonaws.com/ch4-g3-nar/worker:v1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["planpal-notification-worker"]
+          envFrom:
+            - configMapRef: { name: planpal-config }
+            - secretRef: { name: planpal-secret }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /metrics, port: 9092 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /metrics, port: 9092 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-worker
+  namespace: planpal
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ai-worker }
+  template:
+    metadata:
+      labels: { app: ai-worker }
+    spec:
+      serviceAccountName: planpal
+      containers:
+        - name: ai-worker
+          image: 134604498185.dkr.ecr.ap-southeast-3.amazonaws.com/ch4-g3-nar/worker:v1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["planpal-ai-worker"]
+          envFrom:
+            - configMapRef: { name: planpal-config }
+            - secretRef: { name: planpal-secret }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /metrics, port: 9093 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /metrics, port: 9093 }
+            initialDelaySeconds: 10
+            periodSeconds: 15

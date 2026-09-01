@@ -1,0 +1,62 @@
+#. apiVersion is the kube group apps/v1 for deployment, these two shapes url so that kubectl can send request to kube-apiserver, the one who verifies scheme and talk directly read/write to etcd database for cluster, it saves this yaml file
+#. metadata holds identity for this frontend deployment which is the name, so that others can call or refer to frontend such as kubectl get deployment frontend or kubectl scale deployment frontend --replicas=3, kubectl rollout restart
+#. this is the spec, replicas 2 for zero-downtime and rolling update
+#. matchLabels is somekind of label matcher for pods with the label or name front end
+#. template is the blueprint to create pods (replicaSets created them right, replicaSets make sure that the pods are always two)
+#. resources -> requests = minimum guarantee for scheduler in deciding wich node still has the capacity of >100m cpu... kalau gaada, pod nyangkut di status pending -> try to implement hpa
+#. resources -> limits = maximum guarantee, if container tries to use cpu more than 300m, then throttle, and memory >256 kill, restart
+#. readinessProbe -> kube checks whether this pod is ready to accept traffic from user or not yet | for temporary case such as next.js still booting, db reconnecting, contoh yg gbs deadlock
+#. ^^ 1. kubelet send GET to http frontend inside pod (dari dalam cluster, ngehit halaman utama nextjs) kalau respon 200-399 sukses maka ready, kalau connection refused/timeout/500an berarti gagal
+#. ^^ 2. initialDelaySeconds: 5s after container start or running, then send (next.js needs to boot, load module, siapin server)
+#. ^^ 3. period seconds 10 kubelet check tiap 10 detik -> cek bisa kena memory pressure, koneksi db down, app ga sehat
+#. livenessProbe -> checking whether the pod is active and healthy or need to be force restart (+kill process) | such as oom, deadlock, total hang
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: planpal
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: { app: frontend }
+  template:
+    metadata:
+      labels: { app: frontend }
+    spec:
+      serviceAccountName: planpal-fe
+      containers:
+        - name: frontend
+          image: 134604498185.dkr.ecr.ap-southeast-3.amazonaws.com/ch4-g3-nar/frontend:v1.0.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef: { name: planpal-frontend-secret }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /, port: 3000 }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /, port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: planpal
+spec:
+  selector: { app: frontend }
+  ports:
+    - port: 3000
+      targetPort: 3000

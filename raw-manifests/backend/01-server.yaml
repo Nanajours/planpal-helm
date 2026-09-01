@@ -1,0 +1,73 @@
+#. apiVersion: apps/v1 -> v1 is the core group, apps is the named group -> this shapes or define the url routing to kube-apiserver
+#. kind: Deployment -> because we want to deploy the plan-pal server image, the replicas are identic unlike postgre- the replicas have their own volume (StatefulSet), and unlike job- server needs to be ready at all time
+#. name -> this is the ID, so that manifest can reference to it
+#. namespace -> this is to group or isolate objects (all the manifests)
+#. spec.replicas: 2 -> manages and ensure that pods must be 2 at all time
+#. spec.selector.matchLabels -> query "to find pod that has this label, which pod is mine (deployment)" & compare it with the replicas, and it will be labelled
+#. template: this creates a blueprint for pods, because replica manages them
+#. containers: we use container to deploy images that we've built, with given name (otherwise it will get a default random name from replica)
+#. image pull policy = rules to when kubelet needs to pull image from registry
+#. ports -> this is just a documentation -> config.rs
+
+#. lifecycle prestop -> this gave solution to when kube tries to stop 1 pod for rolling/scale down, sigterm is instant
+#. ^^ but update "put the pods out of the service list" needs time to arrive at all kube proxy
+#. requests -> used by scheduler to choose which is the best nodes to put the pods + minimum guarantee avail resources
+#. limits -> limits the resources, cpu -> throttle, memory -> kill
+#. limit memory needs more headroom above the actual usage since memory overrun will get forced killed and the process or request dropped by force -> server crash
+
+#. readiness probe -> temporary, check whether pod is ready to receive request
+#. ^^ kalau gagal -> pod ditarik dari traffic
+#. the path is just where the kubelet can check
+#. liveness probe
+#. ^^ kalau gagal k8s restart pod servernya
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: planpal
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: { app: server }
+  template:
+    metadata:
+      labels: { app: server }
+    spec:
+      serviceAccountName: planpal
+      containers:
+        - name: server
+          image: 134604498185.dkr.ecr.ap-southeast-3.amazonaws.com/ch4-g3-nar/server:v1.0.0
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8088 }]
+          envFrom:
+            - configMapRef: { name: planpal-config }
+            - secretRef: { name: planpal-secret }
+          lifecycle:
+            preStop:
+              exec: { command: ["sleep", "5"] }
+          resources:
+            requests: { cpu: 100m, memory: 150Mi }
+            limits: { cpu: 500m, memory: 384Mi }
+          readinessProbe:
+            httpGet: { path: /api/v1/health, port: 8088 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/v1/health, port: 8088 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: planpal
+spec:
+  selector: { app: server }
+  ports: [{ port: 8088, targetPort: 8088 }]

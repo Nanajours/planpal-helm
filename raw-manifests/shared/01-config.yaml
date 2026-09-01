@@ -1,0 +1,28 @@
+#. everytime kubectl apply the first time, this file will be stored in the etcd cluster
+#. when is it used? only injected the data one time as env variable to container, when container start
+#. api version group v1 + config map shapes url so that kubectl can send req to kube api-server
+#. config map = object kube to store config data non secret as key-values
+#. meta data holds identity data for this configmap
+#. data is the non secrets data with the format key-values
+#. POSTGRES_DB & POSTGRES_USER = authetication & authorization for db (read by postgres image pas container start)
+#. NATS is basically just a message broker from 1 process to other process = every job as long as process is alive
+#. Secret souce = used for runtime text log
+#. REDIS -> used in worker (schedule, notif, ai)
+#. Google client -> Public ID you got after register app at Google Cloud Console -> izin buat google calendar
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: planpal-config
+  namespace: planpal
+data:
+  POSTGRES_DB: planpal
+  POSTGRES_USER: planpal
+  APP__NATS__URL: nats://nats:4222
+  APP__REDIS__URL: redis://redis:6379
+  APP__GOOGLE__CLIENT_ID: local-dummy-client-id
+  APP__EMAIL__PROVIDER: ses
+  APP__SMTP__FROM: vctamsil26@dev1.idserve.net
+  APP__AI__PROVIDER: deepseek
+  APP__AI__MODEL_ID: claude-opus
+  APP__AI__API_BASE_URL: https://llm.devopsinstitute.id/v1/chat/completions

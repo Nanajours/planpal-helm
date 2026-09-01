@@ -1,0 +1,129 @@
+# Default values for the planpal chart.
+# Everything here is safe for a scratch cluster. Production overrides live in values-prod.yaml.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # ECR registry that holds all three application images.
+  registry: 134604498185.dkr.ecr.ap-southeast-3.amazonaws.com
+  pullPolicy: IfNotPresent
+  # Repositories inside that registry. Tags default to .Chart.AppVersion.
+  server: ch4-g3-nar/server
+  worker: ch4-g3-nar/worker
+  frontend: ch4-g3-nar/frontend
+  tag: ""
+
+# ServiceAccounts. On EKS these are bound to IAM roles by Pod Identity
+# associations created outside the chart, so no annotations are needed here.
+serviceAccount:
+  create: true
+  backend: planpal
+  frontend: planpal-fe
+
+# Non-secret application configuration. Rendered into a ConfigMap and
+# consumed by every backend workload through envFrom.
+config:
+  POSTGRES_DB: planpal
+  POSTGRES_USER: planpal
+  APP__NATS__URL: nats://nats:4222
+  APP__REDIS__URL: redis://redis:6379
+  APP__GOOGLE__CLIENT_ID: local-dummy-client-id
+  APP__EMAIL__PROVIDER: ses
+  APP__SMTP__FROM: vctamsil26@dev1.idserve.net
+  APP__AI__PROVIDER: deepseek
+  APP__AI__MODEL_ID: claude-opus
+  APP__AI__API_BASE_URL: https://llm.devopsinstitute.id/v1/chat/completions
+
+# Secrets come from AWS Secrets Manager through the External Secrets Operator.
+# No secret value is ever stored in this chart. ESO authenticates with its own
+# IAM role, so the SecretStore needs no auth block.
+externalSecrets:
+  enabled: true
+  region: ap-southeast-3
+  # One Secrets Manager entry holds every key listed below.
+  awsSecretName: ch4-g3-secret-nar
+  refreshInterval: 1h
+  storeName: aws-secretsmanager
+
+server:
+  replicaCount: 2
+  port: 8088
+  resources:
+    requests: { cpu: 100m, memory: 150Mi }
+    limits: { cpu: 500m, memory: 384Mi }
+  # Delays SIGTERM so kube-proxy on every node has time to drop this Pod
+  # from the Service before it stops accepting connections.
+  preStopSleep: 5
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+frontend:
+  replicaCount: 2
+  port: 3000
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 300m, memory: 256Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# The three workers share one image and differ only by entrypoint and
+# metrics port. Each exposes /metrics, which doubles as its health check.
+workers:
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  schedule:
+    enabled: true
+    metricsPort: 9091
+    command: []
+  notification:
+    enabled: true
+    metricsPort: 9092
+    command: ["planpal-notification-worker"]
+  ai:
+    enabled: true
+    metricsPort: 9093
+    command: ["planpal-ai-worker"]
+
+# Creates the first admin account. Runs once per release.
+seedJob:
+  enabled: true
+
+# In-cluster datastores. Disable postgres when using RDS.
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  storageClass: gp3
+  size: 1Gi
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+
+nats:
+  enabled: true
+  image: nats:2-alpine
+
+ingress:
+  enabled: true
+  className: alb
+  host: ch4-g3-nar.sandbox.devopsinstitute.id
+  # ACM certificate ARN. The ALB terminates TLS, so no Kubernetes Secret.
+  certificateArn: ""
+  healthcheckPath: /api/v1/health

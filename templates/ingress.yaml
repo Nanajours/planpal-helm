@@ -1,0 +1,44 @@
+{{- if .Values.ingress.enabled }}
+{{- /* The AWS Load Balancer Controller turns this into a real ALB. TLS
+       terminates there using an ACM certificate, so there is no tls block
+       and no Kubernetes Secret involved. */}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: planpal-ingress
+  labels:
+    {{- include "planpal.labels" . | nindent 4 }}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    {{- /* ip targets the Pod directly instead of hopping through a NodePort. */}}
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    {{- with .Values.ingress.certificateArn }}
+    alb.ingress.kubernetes.io/certificate-arn: {{ . }}
+    {{- end }}
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    {{- /* / redirects, which the ALB would score as unhealthy. */}}
+    alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.ingress.healthcheckPath }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- /* /api is listed first because pathType Prefix makes / match
+                 everything, and the ALB evaluates rules in order. */}}
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: server
+                port:
+                  number: {{ .Values.server.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: {{ .Values.frontend.port }}
+{{- end }}

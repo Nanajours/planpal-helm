@@ -1,0 +1,6 @@
+{
+  "//": "Helm templates are Go templates, not YAML. The Red Hat YAML extension cannot parse {{ }} and flags every line, so validation is off for this workspace. helm lint and helm template are the real checks.",
+  "yaml.validate": false,
+  "yaml.format.enable": false,
+  "helm-intellisense.lookupFilesForValues": ["values.yaml", "values-prod.yaml"]
+}

@@ -18,13 +18,16 @@ the three workers and the datastores are data, not structure, so they live in
 
 {{/* How a probe reaches the container: HTTP by default, exec for the datastores. */}}
 {{- define "planpal.probeHandler" -}}
-{{- if .exec }}
+{{- /* The -}} on if/else/end matter: without them this helper returns a string
+       that already starts with a newline, and the nindent 2 at the call site
+       adds a second one, leaving a blank line inside the probe. */}}
+{{- if .exec -}}
 exec:
   command:
     {{- toYaml .exec | nindent 4 }}
-{{- else }}
+{{- else -}}
 httpGet: { path: {{ .path }}, port: {{ .port }} }
-{{- end }}
+{{- end -}}
 {{- end -}}
 
 {{/* Both probes from one spec. Readiness gates traffic, liveness restarts the

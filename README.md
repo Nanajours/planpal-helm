@@ -81,3 +81,27 @@ helm lint . -f values-prod.yaml
 helm template planpal . -n planpal -f values-prod.yaml
 helm test planpal -n planpal          # curls /api/v1/health through the Service
 ```
+
+## Upgrading once Argo Rollouts is enabled
+
+Helm 4 applies server-side, so it records field ownership. The rollouts
+controller legitimately owns two things the chart also declares:
+
+- `.spec.selector` on the `server` and `server-preview` Services, which it
+  rewrites on every promotion to point at the live ReplicaSet
+- `.spec.template.spec.containers[].image`, if anyone ran
+  `kubectl argo rollouts set image`
+
+A plain `helm upgrade` therefore fails with `Apply failed with 1 conflict`.
+Pass `--force-conflicts` to let Helm reclaim those fields:
+
+```bash
+helm upgrade planpal . -n planpal -f values-prod.yaml --force-conflicts
+```
+
+This is safe and it is the point: the chart is the source of truth, so an
+imperative `set image` should be reverted by the next upgrade. The controller
+re-adds its pod-template-hash to the selectors immediately afterwards.
+
+Use `set image` to demonstrate the rollout mechanism, not to deploy. To change
+version for real, edit `image.tag` in `values-prod.yaml` and upgrade.

@@ -45,6 +45,14 @@ workloads:
       enabled: true
       minReplicas: 2
       maxReplicas: 5
+    # Progressive delivery via Argo Rollouts. The server is the only
+    # workload worth it: it takes live traffic and has a health endpoint the
+    # controller can gate on. Promotion is manual.
+    rollout:
+      enabled: true
+      strategy: blueGreen
+      autoPromotionEnabled: false
+      scaleDownDelaySeconds: 30
 
   frontend:
     replicas: 2

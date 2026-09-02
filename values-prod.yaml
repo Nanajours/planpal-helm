@@ -5,8 +5,9 @@
 # The cluster already has the AWS Load Balancer Controller, ExternalDNS,
 # External Secrets Operator and the EBS CSI driver. Each ServiceAccount is
 # bound to an IAM role by a Pod Identity association made outside this chart.
-
-#. this is a value file for reusability, and will be injected to templates
+#
+# Only the deltas from values.yaml belong here. Maps merge key by key, so
+# overriding one field of a workload leaves the rest of it alone.
 
 image:
   tag: v1.0.0
@@ -17,6 +18,8 @@ ingress:
   host: ch4-g3-nar.sandbox.devopsinstitute.id
   certificateArn: arn:aws:acm:ap-southeast-3:134604498185:certificate/d2af9d54-2b41-4ff0-97c0-a59d8674802e
   healthcheckPath: /api/v1/health
+  groupName: global-alb
+  groupOrder: 10
 
 externalSecrets:
   enabled: true
@@ -24,27 +27,28 @@ externalSecrets:
   awsSecretName: ch4-g3-secret-nar
   refreshInterval: 1h
 
-# The database is on RDS, reached through SECRET_DATABASE_URL in Secrets Manager.
-# Running a second Postgres in-cluster would be unused and would hold an EBS
-# volume for nothing.
-postgres:
-  enabled: false
+workloads:
+  # The database is on RDS, reached through SECRET_DATABASE_URL in Secrets
+  # Manager. Running a second Postgres in-cluster would be unused and would
+  # hold an EBS volume for nothing.
+  postgres:
+    enabled: false
 
-redis:
-  enabled: true
-nats:
-  enabled: true
-
-server:
-  replicaCount: 2
-  hpa:
+  redis:
     enabled: true
-    minReplicas: 2
-    maxReplicas: 5
-
-frontend:
-  replicaCount: 2
-  hpa:
+  nats:
     enabled: true
-    minReplicas: 2
-    maxReplicas: 5
+
+  server:
+    replicas: 2
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+
+  frontend:
+    replicas: 2
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5

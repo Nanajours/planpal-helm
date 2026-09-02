@@ -6,7 +6,6 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: planpal-ingress
-  namespace: planpal
   labels:
     {{- include "planpal.labels" . | nindent 4 }}
   annotations:
@@ -14,14 +13,21 @@ metadata:
     {{- /* ip targets the Pod directly instead of hopping through a NodePort. */}}
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
-    {{- with .Values.ingress.certificateArn }}
-    alb.ingress.kubernetes.io/certificate-arn: {{ . }}
+    {{- if eq .Values.ingress.className "alb" }}
+    {{- /* required fails at template time rather than leaving the ALB to come
+           up without a listener certificate. */}}
+    alb.ingress.kubernetes.io/certificate-arn: {{ required "ingress.certificateArn is required when ingress.enabled and ingress.className is alb" .Values.ingress.certificateArn }}
     {{- end }}
     alb.ingress.kubernetes.io/ssl-redirect: '443'
     {{- /* / redirects, which the ALB would score as unhealthy. */}}
     alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.ingress.healthcheckPath }}
-    alb.ingress.kubernetes.io/group.name: global-alb
-    alb.ingress.kubernetes.io/group.order: '10'
+    {{- with .Values.ingress.groupName }}
+    {{- /* Every Ingress sharing an ALB must name the same group. Lower order
+           wins, and / below matches everything, so a subpath on this host
+           needs a smaller number than this one. */}}
+    alb.ingress.kubernetes.io/group.name: {{ . }}
+    alb.ingress.kubernetes.io/group.order: {{ $.Values.ingress.groupOrder | quote }}
+    {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   rules:
@@ -36,13 +42,12 @@ spec:
               service:
                 name: server
                 port:
-                  number: {{ .Values.server.port }}
+                  number: {{ (index .Values.workloads.server.service.ports 0).port }}
           - path: /
             pathType: Prefix
-            backend: 
+            backend:
               service:
                 name: frontend-service
                 port:
-                  number: {{ .Values.frontend.port }}
-
+                  number: {{ (index .Values.workloads.frontend.service.ports 0).port }}
 {{- end }}

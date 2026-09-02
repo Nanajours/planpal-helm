@@ -15,5 +15,4 @@ The ExternalSecrets must reach SecretSynced before the app can start; the
 database URL and every credential arrive that way.
 
 Health, end to end:
-  kubectl run probe --rm -i --restart=Never -n {{ .Release.Namespace }} \
-    --image=curlimages/curl -- curl -s http://server:{{ .Values.server.port }}/api/v1/health
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

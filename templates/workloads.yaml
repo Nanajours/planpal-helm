@@ -1,0 +1,22 @@
+{{- /* Every Deployment, StatefulSet, Service, HPA and PDB in the chart is
+       generated from .Values.workloads. Adding a component means adding a
+       values entry, not a new file. Map keys iterate in sorted order, so the
+       rendered output is stable. */}}
+{{- range $name, $w := .Values.workloads }}
+{{- if $w.enabled }}
+---
+{{ include "planpal.workload" (dict "root" $ "name" $name "w" $w) }}
+{{- with $w.service }}
+---
+{{ include "planpal.service" (dict "root" $ "name" $name "svc" .) }}
+{{- end }}
+{{- if and $w.hpa $w.hpa.enabled }}
+---
+{{ include "planpal.hpa" (dict "root" $ "name" $name "w" $w) }}
+{{- end }}
+{{- if and $w.pdb $w.pdb.enabled }}
+---
+{{ include "planpal.pdb" (dict "root" $ "name" $name "w" $w) }}
+{{- end }}
+{{- end }}
+{{- end }}

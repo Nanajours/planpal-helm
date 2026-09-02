@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: planpal
+  namespace: argocd
+spec:
+  project: planpal
+  source:
+    repoURL: git@github.com:Nanajours/planpal-helm.git
+    targetRevision: main
+    path: .
+    helm:
+      valueFiles:
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: planpal
+  syncPolicy: {}

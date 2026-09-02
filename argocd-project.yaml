@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: planpal
+  namespace: argocd
+spec:
+  description: PlanPal Helm chart
+  sourceRepos:
+    - git@github.com:Nanajours/planpal-helm.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: planpal
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

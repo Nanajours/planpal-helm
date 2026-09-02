@@ -277,6 +277,66 @@
               "type": "string"
             }
           }
+        },
+        "rollout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "description": "Replace the Deployment with an Argo Rollout for progressive delivery. Requires the argo-rollouts controller in the cluster.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "strategy": {
+              "type": "string",
+              "enum": [
+                "blueGreen",
+                "canary"
+              ],
+              "default": "blueGreen"
+            },
+            "activeService": {
+              "type": "string"
+            },
+            "previewService": {
+              "type": "string"
+            },
+            "autoPromotionEnabled": {
+              "type": "boolean"
+            },
+            "scaleDownDelaySeconds": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "setWeight": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "pause": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "duration": {
+                        "type": [
+                          "string",
+                          "integer"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }

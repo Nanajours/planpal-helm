@@ -10,6 +10,15 @@
 ---
 {{ include "planpal.service" (dict "root" $ "name" $name "svc" .) }}
 {{- end }}
+{{- if and $w.rollout $w.rollout.enabled (ne ($w.rollout.strategy | default "blueGreen") "canary") }}
+---
+{{- /* Blue-green needs a second Service. The rollouts controller owns both
+       selectors: preview points at the incoming ReplicaSet, active at the
+       live one, and promotion swaps them. */}}
+{{ include "planpal.service" (dict "root" $ "name" $name "svc" (dict
+     "name" ($w.rollout.previewService | default (printf "%s-preview" $name))
+     "ports" $w.service.ports)) }}
+{{- end }}
 {{- if and $w.hpa $w.hpa.enabled }}
 ---
 {{ include "planpal.hpa" (dict "root" $ "name" $name "w" $w) }}

@@ -49,8 +49,17 @@ livenessProbe:
 {{- $name := .name -}}
 {{- $w := .w -}}
 {{- $kind := $w.kind | default "Deployment" -}}
+{{- /* An Argo Rollout is a drop-in replacement for a Deployment: same pod
+       template, same selector, different apiVersion and a strategy the
+       rollouts controller understands. Only the wrapper changes. */}}
+{{- $isRollout := and $w.rollout $w.rollout.enabled -}}
+{{- if $isRollout }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+{{- else }}
 apiVersion: apps/v1
 kind: {{ $kind }}
+{{- end }}
 metadata:
   name: {{ $name }}
   labels:
@@ -58,7 +67,36 @@ metadata:
     app.kubernetes.io/component: {{ $name }}
 spec:
   replicas: {{ $w.replicas | default 1 }}
-  {{- if eq $kind "StatefulSet" }}
+  {{- if $isRollout }}
+  strategy:
+    {{- if eq ($w.rollout.strategy | default "blueGreen") "canary" }}
+    {{- /* Shifts a share of live traffic to the new version at each step.
+           Percentage splitting on an ALB needs the Ingress wired in; without
+           that these steps gate on time and replica count only. */}}
+    canary:
+      steps:
+        {{- range $w.rollout.steps }}
+        {{- if .setWeight }}
+        - setWeight: {{ .setWeight }}
+        {{- end }}
+        {{- if .pause }}
+        - pause: {{ toYaml .pause | nindent 12 }}
+        {{- end }}
+        {{- end }}
+    {{- else }}
+    {{- /* Blue-green: the new version comes up in full behind previewService
+           while activeService keeps serving the old one. Promotion flips the
+           Service selector, so cutover and rollback are both instant. */}}
+    blueGreen:
+      activeService: {{ $w.rollout.activeService | default $name }}
+      previewService: {{ $w.rollout.previewService | default (printf "%s-preview" $name) }}
+      {{- /* false means a human runs `kubectl argo rollouts promote`. */}}
+      autoPromotionEnabled: {{ $w.rollout.autoPromotionEnabled | default false }}
+      {{- with $w.rollout.scaleDownDelaySeconds }}
+      scaleDownDelaySeconds: {{ . }}
+      {{- end }}
+    {{- end }}
+  {{- else if eq $kind "StatefulSet" }}
   serviceName: {{ $name }}
   {{- else if eq ($w.strategy | default "") "RollingUpdate" }}
   strategy:
@@ -200,8 +238,15 @@ metadata:
     app.kubernetes.io/component: {{ $name }}
 spec:
   scaleTargetRef:
+    {{- /* An HPA pointed at a Deployment that a Rollout replaced silently
+           manages nothing, so the target kind has to follow. */}}
+    {{- if and $w.rollout $w.rollout.enabled }}
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    {{- else }}
     apiVersion: apps/v1
     kind: {{ $w.kind | default "Deployment" }}
+    {{- end }}
     name: {{ $name }}
   minReplicas: {{ $w.hpa.minReplicas }}
   maxReplicas: {{ $w.hpa.maxReplicas }}

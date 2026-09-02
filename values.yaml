@@ -70,6 +70,20 @@ workloads:
     image: ch4-g3-nar/server
     replicas: 2
     strategy: RollingUpdate
+    # Progressive delivery. Off by default: turning it on replaces the
+    # Deployment with a Rollout, and a Rollout cannot adopt an existing
+    # Deployment's ReplicaSets, so the Deployment must be deleted first.
+    #   kubectl delete deployment server -n planpal
+    #   helm upgrade planpal . -n planpal -f values-prod.yaml \
+    #     --set workloads.server.rollout.enabled=true
+    rollout:
+      enabled: false
+      strategy: blueGreen
+      # false means promotion is a deliberate act:
+      #   kubectl argo rollouts promote server -n planpal
+      autoPromotionEnabled: false
+      # Keep the old ReplicaSet around briefly so a rollback is instant.
+      scaleDownDelaySeconds: 30
     serviceAccount: planpal
     configMaps: [planpal-config]
     secrets: [planpal-secret]

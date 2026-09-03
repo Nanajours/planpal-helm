@@ -1,0 +1,16 @@
+{
+  "clusterName": "CH4-G3-NAR",
+  "nodegroupName": "ci",
+  "nodeRole": "arn:aws:iam::134604498185:role/AmazonEKSNodeRole-CH4-G3-NAR",
+  "subnets": [
+    "subnet-056a3d0b91f41c45c",
+    "subnet-00efed0ebefe19188",
+    "subnet-0775f7ae400c2c91a"
+  ],
+  "instanceTypes": ["t3.xlarge"],
+  "amiType": "AL2023_x86_64_STANDARD",
+  "diskSize": 50,
+  "scalingConfig": { "minSize": 0, "maxSize": 2, "desiredSize": 1 },
+  "labels": { "workload": "ci" },
+  "taints": [{ "key": "ci", "value": "true", "effect": "NO_SCHEDULE" }]
+}

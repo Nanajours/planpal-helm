@@ -1,7 +1,3 @@
-
-image:
-  tag: v1.0.0
-
 ingress:
   enabled: true
   className: alb
@@ -27,6 +23,7 @@ workloads:
     enabled: true
 
   server:
+    tag: v1.0.0
     replicas: 2
     hpa:
       enabled: true
@@ -39,8 +36,15 @@ workloads:
       scaleDownDelaySeconds: 30
 
   frontend:
+    tag: v1.0.0
     replicas: 2
     hpa:
       enabled: true
       minReplicas: 2
       maxReplicas: 5
+  schedule-worker:
+    tag: v1.0.0
+  notification-worker:
+    tag: v1.0.0
+  ai-worker:
+    tag: v1.0.0

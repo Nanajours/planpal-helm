@@ -69,7 +69,8 @@ authenticated by an EKS Pod Identity association on its own ServiceAccount.
 |---|---|
 | `workloads.postgres.enabled: false` in prod | The database is on RDS |
 | `workloads.<name>.registry: ""` | Pulls from Docker Hub instead of the shared ECR registry |
-| `image.tag` | Defaults to `.Chart.AppVersion`; prod pins `v1.0.0` |
+| `image.tag` | Fallback tag for every workload; defaults to `.Chart.AppVersion` |
+| `workloads.<name>.tag` | Per-workload tag, overrides `image.tag`; prod pins each one |
 | `workloads.<name>.strategy` | `RollingUpdate` for the two traffic-serving Deployments; unset elsewhere leaves the Kubernetes default |
 | `ingress.enabled: false` by default | A scratch cluster has no AWS Load Balancer Controller; prod enables it |
 | `ingress.certificateArn` | ALB terminates TLS with ACM, no k8s Secret. `required` when the class is `alb` |
@@ -104,4 +105,13 @@ imperative `set image` should be reverted by the next upgrade. The controller
 re-adds its pod-template-hash to the selectors immediately afterwards.
 
 Use `set image` to demonstrate the rollout mechanism, not to deploy. To change
-version for real, edit `image.tag` in `values-prod.yaml` and upgrade.
+version for real, set the tag for the workloads you rebuilt and upgrade:
+
+```
+./hack/set-tag.sh values-prod.yaml <tag> server schedule-worker notification-worker ai-worker
+./hack/set-tag.sh values-prod.yaml <tag> frontend
+```
+
+Backend and frontend carry separate tags on purpose: their pipelines run
+independently, so a single shared `image.tag` would let whichever finished last
+point all three images at a SHA only one of them was ever built with.

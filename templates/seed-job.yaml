@@ -19,7 +19,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: seed-admin
-          image: {{ include "planpal.image" (dict "root" . "w" .Values.seedJob) }}
+          image: {{ include "planpal.image" (dict "root" . "w" (merge (dict "tag" (.Values.seedJob.tag | default .Values.workloads.server.tag)) .Values.seedJob)) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: {{ toYaml .Values.seedJob.command | nindent 12 }}
           envFrom:

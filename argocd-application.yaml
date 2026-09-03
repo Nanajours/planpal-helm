@@ -6,7 +6,7 @@ metadata:
 spec:
   project: planpal
   source:
-    repoURL: git@github.com:Nanajours/planpal-helm.git
+    repoURL: https://gitlab-g3-nar.sandbox.devopsinstitute.id/administrator/helm_planpal_ch3.git
     targetRevision: main
     path: .
     helm:

@@ -1,7 +1,3 @@
-{{- /* Every Deployment, StatefulSet, Service, HPA and PDB in the chart is
-       generated from .Values.workloads. Adding a component means adding a
-       values entry, not a new file. Map keys iterate in sorted order, so the
-       rendered output is stable. */}}
 {{- range $name, $w := .Values.workloads }}
 {{- if $w.enabled }}
 ---
@@ -12,9 +8,6 @@
 {{- end }}
 {{- if and $w.rollout $w.rollout.enabled (ne ($w.rollout.strategy | default "blueGreen") "canary") }}
 ---
-{{- /* Blue-green needs a second Service. The rollouts controller owns both
-       selectors: preview points at the incoming ReplicaSet, active at the
-       live one, and promotion swaps them. */}}
 {{ include "planpal.service" (dict "root" $ "name" $name "svc" (dict
      "name" ($w.rollout.previewService | default (printf "%s-preview" $name))
      "ports" $w.service.ports)) }}

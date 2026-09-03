@@ -1,7 +1,4 @@
 {{- if .Values.ingress.enabled }}
-{{- /* The AWS Load Balancer Controller turns this into a real ALB. TLS
-       terminates there using an ACM certificate, so there is no tls block
-       and no Kubernetes Secret involved. */}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -10,21 +7,14 @@ metadata:
     {{- include "planpal.labels" . | nindent 4 }}
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
-    {{- /* ip targets the Pod directly instead of hopping through a NodePort. */}}
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     {{- if eq .Values.ingress.className "alb" }}
-    {{- /* required fails at template time rather than leaving the ALB to come
-           up without a listener certificate. */}}
     alb.ingress.kubernetes.io/certificate-arn: {{ required "ingress.certificateArn is required when ingress.enabled and ingress.className is alb" .Values.ingress.certificateArn }}
     {{- end }}
     alb.ingress.kubernetes.io/ssl-redirect: '443'
-    {{- /* / redirects, which the ALB would score as unhealthy. */}}
     alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.ingress.healthcheckPath }}
     {{- with .Values.ingress.groupName }}
-    {{- /* Every Ingress sharing an ALB must name the same group. Lower order
-           wins, and / below matches everything, so a subpath on this host
-           needs a smaller number than this one. */}}
     alb.ingress.kubernetes.io/group.name: {{ . }}
     alb.ingress.kubernetes.io/group.order: {{ $.Values.ingress.groupOrder | quote }}
     {{- end }}
@@ -34,8 +24,6 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          {{- /* /api is listed first because pathType Prefix makes / match
-                 everything, and the ALB evaluates rules in order. */}}
           - path: /api
             pathType: Prefix
             backend:

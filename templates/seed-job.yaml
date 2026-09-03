@@ -1,6 +1,4 @@
 {{- if .Values.seedJob.enabled }}
-{{- /* Creates the first admin account. The name carries the revision so a
-       helm upgrade produces a new Job rather than failing on an immutable one. */}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -28,9 +26,6 @@ spec:
             - configMapRef: { name: planpal-config }
             - secretRef: { name: planpal-secret }
             - secretRef: { name: planpal-seed-admin-secret }
-          {{- /* seed_admin reads DATABASE_URL, but the secret stores the value
-                 under SECRET_DATABASE_URL. envFrom cannot rename a key, so the
-                 single value is mapped explicitly here. */}}
           env:
             - name: DATABASE_URL
               valueFrom:

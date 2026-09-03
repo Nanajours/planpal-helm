@@ -1,26 +1,13 @@
-{{/*
-Every long-running workload in this chart is one of two shapes: a Deployment or
-a StatefulSet, with a single container. The differences between server, frontend,
-the three workers and the datastores are data, not structure, so they live in
-.Values.workloads and the structure lives here once.
-*/}}
 
-{{/* Image reference. registry defaults to the shared ECR one; set registry: ""
-     on a workload to pull from Docker Hub. tag falls back to .Chart.AppVersion. */}}
 {{- define "planpal.image" -}}
 {{- $reg := .root.Values.image.registry -}}
-{{- /* hasKey, not default: an explicit registry: "" must survive. */}}
 {{- if hasKey .w "registry" }}{{ $reg = .w.registry }}{{ end -}}
 {{- $tag := .w.tag | default .root.Values.image.tag | default .root.Chart.AppVersion -}}
 {{- if $reg }}{{ printf "%s/%s:%s" $reg .w.image $tag }}
 {{- else }}{{ printf "%s:%s" .w.image $tag }}{{ end -}}
 {{- end -}}
 
-{{/* How a probe reaches the container: HTTP by default, exec for the datastores. */}}
 {{- define "planpal.probeHandler" -}}
-{{- /* The -}} on if/else/end matter: without them this helper returns a string
-       that already starts with a newline, and the nindent 2 at the call site
-       adds a second one, leaving a blank line inside the probe. */}}
 {{- if .exec -}}
 exec:
   command:
@@ -30,8 +17,6 @@ httpGet: { path: {{ .path }}, port: {{ .port }} }
 {{- end -}}
 {{- end -}}
 
-{{/* Both probes from one spec. Readiness gates traffic, liveness restarts the
-     container, so liveness is always the slower and more forgiving of the two. */}}
 {{- define "planpal.probes" -}}
 readinessProbe:
   {{- include "planpal.probeHandler" . | nindent 2 }}
@@ -43,15 +28,11 @@ livenessProbe:
   periodSeconds: {{ dig "liveness" "periodSeconds" 20 . }}
 {{- end -}}
 
-{{/* Deployment or StatefulSet. Expects (dict "root" $ "name" <key> "w" <spec>). */}}
 {{- define "planpal.workload" -}}
 {{- $root := .root -}}
 {{- $name := .name -}}
 {{- $w := .w -}}
 {{- $kind := $w.kind | default "Deployment" -}}
-{{- /* An Argo Rollout is a drop-in replacement for a Deployment: same pod
-       template, same selector, different apiVersion and a strategy the
-       rollouts controller understands. Only the wrapper changes. */}}
 {{- $isRollout := and $w.rollout $w.rollout.enabled -}}
 {{- if $isRollout }}
 apiVersion: argoproj.io/v1alpha1
@@ -70,9 +51,6 @@ spec:
   {{- if $isRollout }}
   strategy:
     {{- if eq ($w.rollout.strategy | default "blueGreen") "canary" }}
-    {{- /* Shifts a share of live traffic to the new version at each step.
-           Percentage splitting on an ALB needs the Ingress wired in; without
-           that these steps gate on time and replica count only. */}}
     canary:
       steps:
         {{- range $w.rollout.steps }}
@@ -84,13 +62,9 @@ spec:
         {{- end }}
         {{- end }}
     {{- else }}
-    {{- /* Blue-green: the new version comes up in full behind previewService
-           while activeService keeps serving the old one. Promotion flips the
-           Service selector, so cutover and rollback are both instant. */}}
     blueGreen:
       activeService: {{ $w.rollout.activeService | default $name }}
       previewService: {{ $w.rollout.previewService | default (printf "%s-preview" $name) }}
-      {{- /* false means a human runs `kubectl argo rollouts promote`. */}}
       autoPromotionEnabled: {{ $w.rollout.autoPromotionEnabled | default false }}
       {{- with $w.rollout.scaleDownDelaySeconds }}
       scaleDownDelaySeconds: {{ . }}
@@ -102,21 +76,13 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      {{- /* maxUnavailable 0 keeps every old Pod serving until a new one is
-             Ready, which is what makes the rollout zero-downtime. */}}
       maxUnavailable: 0
       maxSurge: 1
   {{- else if eq ($w.strategy | default "") "Recreate" }}
-  {{- /* For a single-replica workload where two copies must never overlap:
-         a worker that would double-process, or an in-cluster datastore. */}}
   strategy:
     type: Recreate
   {{- else }}
-  {{- /* Unset: Kubernetes' own default (25%/25%). */}}
   {{- end }}
-  {{- /* The selector stays a bare `app: <name>`. It is immutable on a live
-         object, so switching to app.kubernetes.io/* labels here would force an
-         uninstall. The standard labels go on metadata, where they are free. */}}
   selector:
     matchLabels: { app: {{ $name }} }
   template:
@@ -124,8 +90,6 @@ spec:
       labels: { app: {{ $name }} }
       {{- if $w.configMaps }}
       annotations:
-        {{- /* Rolls this workload when non-secret config changes. Without it a
-               ConfigMap edit updates etcd and nothing restarts. */}}
         checksum/config: {{ include (print $root.Template.BasePath "/configmap.yaml") $root | sha256sum }}
       {{- end }}
     spec:
@@ -160,8 +124,6 @@ spec:
           {{- with $w.preStopSleep }}
           lifecycle:
             preStop:
-              {{- /* Delays SIGTERM so kube-proxy on every node has time to drop
-                     this Pod from the Service before it stops accepting work. */}}
               exec: { command: ["sleep", "{{ . }}"] }
           {{- end }}
           {{- with $w.resources }}
@@ -182,8 +144,6 @@ spec:
         name: {{ .name }}
       spec:
         accessModes: ["ReadWriteOnce"]
-        {{- /* Named explicitly: this cluster has no default StorageClass, and
-               gp2 still points at the in-tree provisioner removed in 1.27. */}}
         storageClassName: {{ .storageClass }}
         resources:
           requests:
@@ -191,7 +151,6 @@ spec:
   {{- end }}
 {{- end -}}
 
-{{/* ClusterIP Service. Expects (dict "root" $ "name" <key> "svc" <spec>). */}}
 {{- define "planpal.service" -}}
 {{- $root := .root -}}
 {{- $name := .name -}}
@@ -199,15 +158,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  {{- /* name defaults to the workload key; the frontend overrides it because
-         the Ingress already points at "frontend-service". */}}
   name: {{ $svc.name | default $name }}
   labels:
     {{- include "planpal.labels" $root | nindent 4 }}
     app.kubernetes.io/component: {{ $name }}
 spec:
   {{- if $svc.headless }}
-  {{- /* Headless: gives each Pod a stable DNS name instead of load balancing. */}}
   clusterIP: None
   {{- else }}
   type: ClusterIP
@@ -223,8 +179,6 @@ spec:
     {{- end }}
 {{- end -}}
 
-{{/* HPA. Needs metrics-server; without it TARGETS shows <unknown> and nothing
-     scales, silently. Expects (dict "root" $ "name" <key> "w" <spec>). */}}
 {{- define "planpal.hpa" -}}
 {{- $root := .root -}}
 {{- $name := .name -}}
@@ -238,8 +192,6 @@ metadata:
     app.kubernetes.io/component: {{ $name }}
 spec:
   scaleTargetRef:
-    {{- /* An HPA pointed at a Deployment that a Rollout replaced silently
-           manages nothing, so the target kind has to follow. */}}
     {{- if and $w.rollout $w.rollout.enabled }}
     apiVersion: argoproj.io/v1alpha1
     kind: Rollout
@@ -259,8 +211,6 @@ spec:
           averageUtilization: {{ $w.hpa.targetCPUUtilizationPercentage }}
 {{- end -}}
 
-{{/* PDB. Guards voluntary disruptions only: kubectl drain, node upgrades. Not
-     consulted during a rolling update, which maxUnavailable governs. */}}
 {{- define "planpal.pdb" -}}
 {{- $root := .root -}}
 {{- $name := .name -}}

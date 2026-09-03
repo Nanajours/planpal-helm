@@ -1,28 +1,17 @@
-# Default values for the planpal chart.
-# Everything here is safe for a scratch cluster. Production overrides live in values-prod.yaml.
 
 nameOverride: ""
 fullnameOverride: ""
 
 image:
-  # ECR registry that holds all three application images. A workload can set
-  # its own `registry: ""` to pull from Docker Hub instead.
   registry: 134604498185.dkr.ecr.ap-southeast-3.amazonaws.com
   pullPolicy: IfNotPresent
-  # Tag applied to every workload that does not pin its own. Empty means
-  # .Chart.AppVersion.
   tag: ""
 
-# ServiceAccounts. On EKS these are bound to IAM roles by Pod Identity
-# associations created outside the chart, so no annotations are needed here.
 serviceAccount:
   create: true
   backend: planpal
   frontend: planpal-fe
 
-# Non-secret application configuration. Rendered into a ConfigMap and consumed
-# by every backend workload through envFrom. Changing anything here changes the
-# checksum/config annotation, which rolls the workloads that read it.
 config:
   POSTGRES_DB: planpal
   POSTGRES_USER: planpal
@@ -35,34 +24,13 @@ config:
   APP__AI__MODEL_ID: claude-opus
   APP__AI__API_BASE_URL: https://llm.devopsinstitute.id/v1/chat/completions
 
-# Secrets come from AWS Secrets Manager through the External Secrets Operator.
-# No secret value is ever stored in this chart. ESO authenticates with its own
-# IAM role, so the SecretStore needs no auth block.
 externalSecrets:
   enabled: true
   region: ap-southeast-3
-  # One Secrets Manager entry holds every key listed in external-secrets.yaml.
   awsSecretName: ch4-g3-secret-nar
   refreshInterval: 1h
   storeName: aws-secretsmanager
 
-# ---------------------------------------------------------------------------
-# Workloads
-#
-# One entry per long-running component. templates/_workload.tpl turns each into
-# a Deployment or StatefulSet, plus a Service, HPA and PDB when those blocks are
-# present. Only the differences between components appear here; the shared shape
-# lives in the template.
-#
-# Recognised keys:
-#   enabled, kind (Deployment|StatefulSet), image, registry, tag, replicas,
-#   strategy (RollingUpdate|Recreate), serviceAccount, command, args, ports,
-#   configMaps, secrets, preStopSleep, resources, probe, service, hpa, pdb,
-#   persistence
-#
-# probe defaults to readiness 5s/10s and liveness 15s/20s; override with
-#   probe: { path: /x, port: 1, liveness: { periodSeconds: 30 } }
-# ---------------------------------------------------------------------------
 workloads:
 
   server:
@@ -70,19 +38,10 @@ workloads:
     image: ch4-g3-nar/server
     replicas: 2
     strategy: RollingUpdate
-    # Progressive delivery. Off by default: turning it on replaces the
-    # Deployment with a Rollout, and a Rollout cannot adopt an existing
-    # Deployment's ReplicaSets, so the Deployment must be deleted first.
-    #   kubectl delete deployment server -n planpal
-    #   helm upgrade planpal . -n planpal -f values-prod.yaml \
-    #     --set workloads.server.rollout.enabled=true
     rollout:
       enabled: false
       strategy: blueGreen
-      # false means promotion is a deliberate act:
-      #   kubectl argo rollouts promote server -n planpal
       autoPromotionEnabled: false
-      # Keep the old ReplicaSet around briefly so a rollback is instant.
       scaleDownDelaySeconds: 30
     serviceAccount: planpal
     configMaps: [planpal-config]
@@ -94,8 +53,6 @@ workloads:
       ports: [{ port: 8088 }]
     resources:
       requests: { cpu: 100m, memory: 150Mi }
-      # Memory needs more headroom than CPU: an overrun is an OOM kill, not a
-      # throttle.
       limits: { cpu: 500m, memory: 384Mi }
     hpa:
       enabled: true
@@ -112,12 +69,10 @@ workloads:
     replicas: 2
     strategy: RollingUpdate
     serviceAccount: planpal-fe
-    # No ConfigMap: the frontend reads only its Firebase secret.
     secrets: [planpal-frontend-secret]
     ports: [3000]
     probe: { path: /, port: 3000, readiness: { periodSeconds: 15 } }
     service:
-      # The Ingress already points at this name.
       name: frontend-service
       ports: [{ port: 3000 }]
     resources:
@@ -132,16 +87,12 @@ workloads:
       enabled: true
       minAvailable: 1
 
-  # The three workers share one image and differ only by entrypoint and metrics
-  # port. They serve no traffic, so they get no Service and /metrics doubles as
-  # the health signal.
   schedule-worker:
     enabled: true
     image: ch4-g3-nar/worker
     serviceAccount: planpal
     configMaps: [planpal-config]
     secrets: [planpal-secret]
-    # No command: the image's default entrypoint is the schedule worker.
     probe: { path: /metrics, port: 9091 }
     resources: &workerResources
       requests: { cpu: 100m, memory: 128Mi }
@@ -167,11 +118,8 @@ workloads:
     probe: { path: /metrics, port: 9093 }
     resources: *workerResources
 
-  # In-cluster datastores. Disable postgres when the database is on RDS.
   postgres:
     enabled: true
-    # StatefulSet, not Deployment: the volume and the identity must stay paired
-    # across restarts.
     kind: StatefulSet
     registry: ""
     image: postgres
@@ -215,7 +163,6 @@ workloads:
     registry: ""
     image: nats
     tag: 2-alpine
-    # -m enables the monitoring endpoint the monitor port exposes.
     args: ["-m", "8222"]
     ports: [4222, 8222]
     probe: { path: /healthz, port: 8222 }
@@ -227,28 +174,20 @@ workloads:
       requests: { cpu: 50m, memory: 64Mi }
       limits: { cpu: 200m, memory: 128Mi }
 
-# Creates the first admin account. Runs once per release, as a Helm hook.
 seedJob:
   enabled: true
   image: ch4-g3-nar/server
   command: [seed_admin]
 
 ingress:
-  # Off by default: a scratch cluster has no AWS Load Balancer Controller.
-  # values-prod.yaml turns it on and supplies the certificate.
   enabled: false
   className: alb
   host: ch4-g3-nar.sandbox.devopsinstitute.id
-  # ACM certificate ARN. The ALB terminates TLS, so no Kubernetes Secret.
-  # Required whenever ingress is enabled on the alb class.
   certificateArn: ""
   healthcheckPath: /api/v1/health
-  # Name a group to share one ALB with Ingresses in other namespaces; empty
-  # gives this Ingress an ALB of its own.
   groupName: ""
   groupOrder: 10
 
-# `helm test` runs a Pod that curls the server's health endpoint.
 tests:
   enabled: true
   image: curlimages/curl:8.11.0

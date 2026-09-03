@@ -1,9 +1,7 @@
-{{/* Chart name, overridable */}}
 {{- define "planpal.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{/* Fully qualified name. Release name wins if it already contains the chart name. */}}
 {{- define "planpal.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
@@ -21,7 +19,6 @@
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{/* Labels put on every object */}}
 {{- define "planpal.labels" -}}
 helm.sh/chart: {{ include "planpal.chart" . }}
 app.kubernetes.io/name: {{ include "planpal.name" . }}
